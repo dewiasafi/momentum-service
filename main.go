@@ -43,19 +43,32 @@ func main() {
 		log.Fatal("Gagal terhubung ke database:", err)
 	}
 
-	log.Println("Berhasil terhubung ke database PostgreSQL (Neon)!")
-
 	http.HandleFunc("/", handler)
 	http.HandleFunc("GET /api/v1/activities", getActivitiesHandler)
 	http.HandleFunc("POST /api/v1/activities", createActivityHandler)
 
 	port := ":8080"
 	log.Printf("Server sedang berjalan di http://localhost%s\n", port)
-	errServer := http.ListenAndServe(port, nil)
+	errServer := http.ListenAndServe(port, corsMiddleware(http.DefaultServeMux))
 	if errServer != nil {
 		log.Println("Gagal menjalankan server:", errServer)
 	}
 
+}
+
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
