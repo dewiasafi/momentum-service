@@ -9,6 +9,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
 
+	"project.com/momentum-service/internal/database"
 	"project.com/momentum-service/internal/handler"
 	"project.com/momentum-service/internal/repository"
 	"project.com/momentum-service/internal/router"
@@ -33,6 +34,10 @@ func main() {
 
 	if err := db.Ping(); err != nil {
 		log.Fatal("Gagal terhubung ke database:", err)
+	}
+
+	if err := database.RunAutoMigration(db); err != nil {
+		log.Fatal("Gagal menjalankan migrasi:", err)
 	}
 
 	activityRepo := repository.NewActivityRepository(db)
