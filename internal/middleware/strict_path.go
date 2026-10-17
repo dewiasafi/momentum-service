@@ -9,7 +9,7 @@ import (
 
 func StrictPath(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.Contains(r.RequestURI, "//") {
+		if strings.Contains(r.URL.Path, "//") {
 			helper.Error(w, http.StatusNotFound, "Endpoint Not Found ")
 			return
 		}

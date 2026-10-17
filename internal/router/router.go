@@ -19,7 +19,7 @@ func SetupRoutes(cfg RouterConfig) http.Handler {
 		helper.JSON(w, http.StatusOK, "Momentum API is running", nil)
 	})
 
-	RegisterActivityRoutes(mux, cfg.ActivityHandler)
+	ActivityRoutes(mux, cfg.ActivityHandler)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		helper.Error(w, http.StatusNotFound, "Endpoint tidak ditemukan")
 	})
