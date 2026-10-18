@@ -1,39 +1,29 @@
 package database
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"log"
+	"os"
 )
 
-func RunAutoMigration(db *sql.DB) error {
-	query := `
-	CREATE TABLE IF NOT EXISTS activities (
-		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),		
-		title VARCHAR(255) NOT NULL,
-		notes TEXT,
-		is_completed BOOLEAN NOT NULL DEFAULT FALSE,
-		category VARCHAR(50) NOT NULL DEFAULT 'General',
-		priority VARCHAR(20) NOT NULL DEFAULT 'medium',
-		estimated_minutes INT DEFAULT 0,
-		created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		completed_at TIMESTAMPTZ NULL,
-		deleted_at TIMESTAMPTZ NULL
-	);
-
-	CREATE INDEX IF NOT EXISTS idx_activities_status_created 
-	ON activities (is_completed, created_at DESC) 
-	WHERE deleted_at IS NULL;
-
-	CREATE INDEX IF NOT EXISTS idx_activities_category 
-	ON activities (category) 
-	WHERE deleted_at IS NULL;
-	`
-
-	_, err := db.Exec(query)
-	if err != nil {
-		return err
+func ConnectDB() (*sql.DB, error) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		return nil, fmt.Errorf("DATABASE_URL tidak ditemukan di environment")
 	}
 
-	log.Println("Database migration completed successfully.")
-	return nil
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("gagal membuka koneksi database: %w", err)
+	}
+
+	// Verifikasi koneksi
+	if err := db.PingContext(context.Background()); err != nil {
+		return nil, fmt.Errorf("gagal melakukan ping ke database: %w", err)
+	}
+
+	log.Println("Berhasil terhubung ke database PostgreSQL (Neon) menggunakan database/sql")
+	return db, nil
 }

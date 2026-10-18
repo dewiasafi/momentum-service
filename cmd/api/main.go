@@ -9,7 +9,6 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/joho/godotenv"
 
-	"project.com/momentum-service/internal/database"
 	"project.com/momentum-service/internal/handler"
 	"project.com/momentum-service/internal/repository"
 	"project.com/momentum-service/internal/router"
@@ -36,16 +35,14 @@ func main() {
 		log.Fatal("Gagal terhubung ke database:", err)
 	}
 
-	if err := database.RunAutoMigration(db); err != nil {
-		log.Fatal("Gagal menjalankan migrasi:", err)
-	}
-
 	activityRepo := repository.NewActivityRepository(db)
-
 	activityHandler := handler.NewActivityHandler(activityRepo)
+	authRepo := repository.NewAuthRepository(db)
+	authHandler := handler.NewAuthHandler(authRepo)
 
 	appRouter := router.SetupRoutes(router.RouterConfig{
 		ActivityHandler: activityHandler,
+		AuthHandler:     authHandler,
 	})
 	port := ":8080"
 	log.Printf("Server sedang berjalan di http://localhost%s\n", port)

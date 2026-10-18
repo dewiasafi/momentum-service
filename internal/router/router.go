@@ -6,10 +6,13 @@ import (
 	"project.com/momentum-service/internal/handler"
 	"project.com/momentum-service/internal/helper"
 	"project.com/momentum-service/internal/middleware"
+	"project.com/momentum-service/internal/repository"
 )
 
 type RouterConfig struct {
 	ActivityHandler *handler.ActivityHandler
+	AuthHandler     *handler.AuthHandler
+	AuthRepo        repository.AuthRepository
 }
 
 func SetupRoutes(cfg RouterConfig) http.Handler {
@@ -20,6 +23,8 @@ func SetupRoutes(cfg RouterConfig) http.Handler {
 	})
 
 	ActivityRoutes(mux, cfg.ActivityHandler)
+	AuthRoutes(mux, cfg.AuthHandler, cfg.AuthRepo)
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		helper.Error(w, http.StatusNotFound, "Endpoint tidak ditemukan")
 	})

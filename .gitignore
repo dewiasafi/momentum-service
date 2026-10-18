@@ -1,2 +1,19 @@
+# Secret dan konfigurasi lokal
 .env
+.env.*
+!.env.example
+
+
+# Hasil build
+backend/bin/
+backend/server
 *.exe
+*.test
+*.out
+coverage/
+
+# Editor dan OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
