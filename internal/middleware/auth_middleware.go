@@ -45,6 +45,9 @@ func AuthMiddleware(authRepo repository.AuthRepository, next http.Handler) http.
 
 		ctx := context.WithValue(r.Context(), ContextUserID, session.UserID)
 		ctx = context.WithValue(ctx, ContextSessionToken, tokenHash)
+
+		r = r.WithContext(ctx)
+		next.ServeHTTP(w, r)
 	})
 }
 

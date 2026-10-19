@@ -32,13 +32,13 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expi
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     middleware.SessionCookieName,
-		Value:    "",
+		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   os.Getenv("APP_ENV") == "production",
 		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Unix(0, 0),
-		MaxAge:   -1,
+		Expires:  expiresAt,
+		MaxAge:   maxAge,
 	})
 }
 
@@ -99,7 +99,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[Register Error] Gagal menyimpan token verifikasi: %v\n", err)
 	}
 
-	// Log tautan verifikasi ke konsol (simulasi pengiriman email)
 	verificationURL := "http://localhost:5173/verify-email?token=" + rawToken
 	log.Printf("\n========================================\n[EMAIL VERIFIKASI] Kirim ke: %s\nTautan: %s\n(Kedaluwarsa dalam 30 menit)\n========================================\n", user.Email, verificationURL)
 
@@ -258,6 +257,7 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		Secure:   os.Getenv("APP_ENV") == "production",
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
+		Expires:  time.Unix(0, 0),
 	})
 
 	helper.JSON(w, http.StatusOK, "Logout berhasil.", nil)
