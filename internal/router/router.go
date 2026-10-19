@@ -29,5 +29,9 @@ func SetupRoutes(cfg RouterConfig) http.Handler {
 		helper.Error(w, http.StatusNotFound, "Endpoint tidak ditemukan")
 	})
 
-	return middleware.CORS(middleware.StrictPath(mux))
+	return middleware.CORS(
+		middleware.CSRFMiddleware(
+			middleware.StrictPath(mux),
+		),
+	)
 }

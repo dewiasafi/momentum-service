@@ -19,10 +19,14 @@ func main() {
 		log.Println("Peringatan: File .env tidak ditemukan, membaca dari OS environment")
 	}
 
-	dsn := os.Getenv("DATABASE_URL")
+	if os.Getenv("APP_ENV") == "production" &&
+		os.Getenv("JWT_SECRET_KEY") == "" {
+		log.Fatal("JWT_SECRET_KEY wajib disetting di production")
+	}
 
+	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		log.Fatal("DATABASE_URL belum disetel di .env")
+		log.Fatal("DATABASE_URL belum disetting")
 	}
 
 	db, err := sql.Open("pgx", dsn)
@@ -43,8 +47,16 @@ func main() {
 	appRouter := router.SetupRoutes(router.RouterConfig{
 		ActivityHandler: activityHandler,
 		AuthHandler:     authHandler,
+		AuthRepo:        authRepo,
 	})
-	port := ":8080"
-	log.Printf("Server sedang berjalan di http://localhost%s\n", port)
-	log.Fatal(http.ListenAndServe(port, appRouter))
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	addr := ":" + port
+	log.Printf("Server berjalan di port %s\n", port)
+	log.Fatal(http.ListenAndServe(addr, appRouter))
+
 }

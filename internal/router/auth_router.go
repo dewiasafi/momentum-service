@@ -8,7 +8,11 @@ import (
 	"project.com/momentum-service/internal/repository"
 )
 
-func AuthRoutes(mux *http.ServeMux, h *handler.AuthHandler, authRepo repository.AuthRepository) {
+func AuthRoutes(
+	mux *http.ServeMux,
+	h *handler.AuthHandler,
+	authRepo repository.AuthRepository,
+) {
 
 	// Public Routes
 	mux.HandleFunc("POST /api/v1/auth/register", h.Register)
@@ -18,8 +22,8 @@ func AuthRoutes(mux *http.ServeMux, h *handler.AuthHandler, authRepo repository.
 	mux.HandleFunc("POST /api/v1/auth/resend-verification", h.ResendVerification)
 
 	// Protected Routes (Memerlukan JWT Token yang Valid)
-	mux.Handle("POST /api/v1/auth/logout", middleware.AuthMiddleware(http.HandlerFunc(h.Logout)))
-	mux.Handle("GET /api/v1/profile/me", middleware.AuthMiddleware(http.HandlerFunc(h.GetProfile)))
-	mux.Handle("PATCH /api/v1/profile/me", middleware.AuthMiddleware(http.HandlerFunc(h.UpdateProfile)))
+	mux.Handle("POST /api/v1/auth/logout", middleware.AuthMiddleware(authRepo, http.HandlerFunc(h.Logout)))
+	mux.Handle("GET /api/v1/profile/me", middleware.AuthMiddleware(authRepo, http.HandlerFunc(h.GetProfile)))
+	mux.Handle("PATCH /api/v1/profile/me", middleware.AuthMiddleware(authRepo, http.HandlerFunc(h.UpdateProfile)))
 
 }

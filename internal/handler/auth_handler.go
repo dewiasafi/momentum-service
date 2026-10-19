@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -21,6 +22,24 @@ type AuthHandler struct {
 
 func NewAuthHandler(authRepo repository.AuthRepository) *AuthHandler {
 	return &AuthHandler{authRepo: authRepo}
+}
+
+func setSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
+	maxAge := int(time.Until(expiresAt).Seconds())
+	if maxAge < 0 {
+		maxAge = 0
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   os.Getenv("APP_ENV") == "production",
+		SameSite: http.SameSiteLaxMode,
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+	})
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -63,14 +82,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Buat token acak 32 bytes (plain token dikirim ke link/email user)
 	rawToken, err := helper.GenerateSessionToken()
 	if err != nil {
 		helper.Error(w, http.StatusInternalServerError, "Gagal memproses token verifikasi.")
 		return
 	}
 
-	// Simpan hash SHA-256 token dengan masa berlaku 30 menit
 	tokenHash := helper.HashToken(rawToken)
 	vToken := &model.VerificationToken{
 		UserID:    user.ID,
@@ -109,20 +126,30 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Gate: Hanya akun yang sudah terverifikasi yang boleh login
 	if user.EmailVerifiedAt == nil {
 		helper.Error(w, http.StatusForbidden, "Email belum diverifikasi. Silakan periksa email Anda atau minta kirim ulang tautan verifikasi.")
 		return
 	}
 
-	token, err := helper.GenerateToken(user.ID)
+	rawToken, err := helper.GenerateSessionToken()
 	if err != nil {
-		helper.Error(w, http.StatusInternalServerError, "Gagal men-generate token.")
+		helper.Error(w, http.StatusInternalServerError, "Gagal membuat sesi.")
 		return
 	}
 
-	helper.JSON(w, http.StatusOK, "Login berhasil", map[string]interface{}{
-		"token": token,
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	session := &model.Session{
+		UserID:    user.ID,
+		TokenHash: helper.HashToken(rawToken),
+		ExpiresAt: expiresAt,
+	}
+
+	if err := h.authRepo.CreateSession(r.Context(), session); err != nil {
+		helper.Error(w, http.StatusInternalServerError, "Gagal menyimpan sesi.")
+	}
+
+	setSessionCookie(w, r, rawToken, expiresAt)
+	helper.JSON(w, http.StatusOK, "Login sukses", map[string]interface{}{
 		"user": model.UserResponse{
 			ID:              user.ID,
 			Email:           user.Email,
@@ -212,32 +239,54 @@ func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	tokenHash, ok := r.Context().Value(middleware.ContextSessionToken).(string)
+	if !ok {
+		helper.Error(w, http.StatusUnauthorized, "Sesi tidak ditemukan.")
+		return
+	}
+
+	if err := h.authRepo.DeleteSessionByTokenHash(r.Context(), tokenHash); err != nil {
+		helper.Error(w, http.StatusInternalServerError, "Gagal mengakhiri sesi.")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     middleware.SessionCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   os.Getenv("APP_ENV") == "production",
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
 
 	helper.JSON(w, http.StatusOK, "Logout berhasil.", nil)
+
 }
 
 func (h *AuthHandler) GetSession(w http.ResponseWriter, r *http.Request) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" {
-		helper.JSON(w, http.StatusOK, "Status sesi", map[string]bool{"active": false})
+	cookie, err := r.Cookie(middleware.SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		helper.JSON(w, http.StatusOK, "Status sesi", map[string]bool{
+			"active": false,
+		})
 		return
 	}
 
-	parts := strings.Split(authHeader, " ")
-	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-		helper.JSON(w, http.StatusOK, "Status sesi", map[string]bool{"active": false})
-		return
-	}
-
-	tokenStr := parts[1]
-
-	_, err := helper.ValidateToken(tokenStr)
+	_, err = h.authRepo.GetSessionByTokenHash(
+		r.Context(),
+		helper.HashToken(cookie.Value),
+	)
 	if err != nil {
-		helper.JSON(w, http.StatusOK, "Status sesi", map[string]bool{"active": false})
+		helper.JSON(w, http.StatusOK, "Status sesi", map[string]bool{
+			"active": false,
+		})
 		return
 	}
 
-	helper.JSON(w, http.StatusOK, "Status sesi", map[string]bool{"active": true})
+	helper.JSON(w, http.StatusOK, "Status sesi", map[string]bool{
+		"active": true,
+	})
 }
 
 func (h *AuthHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
