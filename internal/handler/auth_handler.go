@@ -59,7 +59,12 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existingUser, _ := h.authRepo.GetUserByEmail(r.Context(), req.Email)
+	existingUser, err := h.authRepo.GetUserByEmail(r.Context(), req.Email)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		helper.Error(w, http.StatusInternalServerError, "Gagal memeriksa email.")
+		return
+	}
+
 	if existingUser != nil {
 		helper.Error(w, http.StatusConflict, "Email sudah terdaftar.")
 		return
@@ -97,6 +102,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.authRepo.CreateVerificationToken(r.Context(), vToken); err != nil {
 		log.Printf("[Register Error] Gagal menyimpan token verifikasi: %v\n", err)
+		helper.Error(w, http.StatusInternalServerError, "Gagal membuat token verifikasi.")
+		return
 	}
 
 	verificationURL := "http://localhost:5173/verify-email?token=" + rawToken
@@ -145,6 +152,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.authRepo.CreateSession(r.Context(), session); err != nil {
 		helper.Error(w, http.StatusInternalServerError, "Gagal menyimpan sesi.")
+		return
 	}
 
 	setSessionCookie(w, r, rawToken, expiresAt)
