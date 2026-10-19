@@ -82,41 +82,34 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Name:     req.Name,
 	}
 
-	if err := h.authRepo.CreateUser(r.Context(), user); err != nil {
-		helper.Error(w, http.StatusInternalServerError, "Gagal membuat akun.")
-		return
-	}
-
 	rawToken, err := helper.GenerateSessionToken()
 	if err != nil {
 		helper.Error(w, http.StatusInternalServerError, "Gagal memproses token verifikasi.")
 		return
 	}
 
-	tokenHash := helper.HashToken(rawToken)
 	vToken := &model.VerificationToken{
-		UserID:    user.ID,
-		TokenHash: tokenHash,
+		TokenHash: helper.HashToken(rawToken),
 		ExpiresAt: time.Now().Add(30 * time.Minute),
 	}
 
-	if err := h.authRepo.CreateVerificationToken(r.Context(), vToken); err != nil {
-		log.Printf("[Register Error] Gagal menyimpan token verifikasi: %v\n", err)
-		helper.Error(w, http.StatusInternalServerError, "Gagal membuat token verifikasi.")
+	if err := h.authRepo.CreateUserWithVerificationToken(
+		r.Context(),
+		user,
+		vToken,
+	); err != nil {
+		helper.Error(
+			w,
+			http.StatusInternalServerError,
+			"Gagal membuat akun dan token verifikasi.",
+		)
 		return
 	}
 
 	verificationURL := "http://localhost:5173/verify-email?token=" + rawToken
 	log.Printf("\n========================================\n[EMAIL VERIFIKASI] Kirim ke: %s\nTautan: %s\n(Kedaluwarsa dalam 30 menit)\n========================================\n", user.Email, verificationURL)
 
-	helper.JSON(w, http.StatusCreated, "Registrasi berhasil. Silakan cek email Anda untuk memverifikasi akun sebelum login.", map[string]interface{}{
-		"user": model.UserResponse{
-			ID:        user.ID,
-			Email:     user.Email,
-			Name:      user.Name,
-			CreatedAt: user.CreatedAt,
-		},
-	})
+	helper.JSON(w, http.StatusCreated, "Registrasi berhasil. Silakan verifikasi email.", nil)
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {

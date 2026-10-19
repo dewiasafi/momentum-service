@@ -9,7 +9,11 @@ func CORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		allowedOrigin := os.Getenv("FRONTEND_ORIGIN")
 		if allowedOrigin == "" {
-			allowedOrigin = "http://localhost:5173"
+			http.Error(
+				w,
+				"FRONTEND_ORIGIN belum disetting",
+				http.StatusInternalServerError,
+			)
 		}
 
 		origin := r.Header.Get("Origin")

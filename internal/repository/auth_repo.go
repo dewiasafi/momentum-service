@@ -9,7 +9,7 @@ import (
 )
 
 type AuthRepository interface {
-	CreateUser(ctx context.Context, user *model.User) error
+	CreateUserWithVerificationToken(ctx context.Context, user *model.User, token *model.VerificationToken) error
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	GetUserByID(ctx context.Context, id string) (*model.User, error)
 	UpdateUser(ctx context.Context, user *model.User) error
@@ -29,19 +29,6 @@ type authRepository struct {
 
 func NewAuthRepository(db *sql.DB) AuthRepository {
 	return &authRepository{db: db}
-}
-
-func (r *authRepository) CreateUser(ctx context.Context, user *model.User) error {
-	query := `
-		INSERT INTO users (email, password_hash, display_name)
-		VALUES ($1, $2, $3)
-		RETURNING id, created_at, updated_at
-	`
-
-	err := r.db.QueryRowContext(ctx, query, user.Email, user.Password, user.Name).
-		Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
-
-	return err
 }
 
 func (r *authRepository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
@@ -159,4 +146,54 @@ func (r *authRepository) DeleteSessionByTokenHash(ctx context.Context, tokenHash
 	query := `DELETE FROM sessions WHERE token_hash = $1`
 	_, err := r.db.ExecContext(ctx, query, tokenHash)
 	return err
+}
+
+func (r *authRepository) CreateUserWithVerificationToken(
+	ctx context.Context,
+	user *model.User,
+	token *model.VerificationToken,
+) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	queryUser := `
+        INSERT INTO users (email, password_hash, display_name)
+        VALUES ($1, $2, $3)
+        RETURNING id, created_at, updated_at
+    `
+
+	err = tx.QueryRowContext(
+		ctx,
+		queryUser,
+		user.Email,
+		user.Password,
+		user.Name,
+	).Scan(&user.ID, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		return err
+	}
+
+	token.UserID = user.ID
+
+	queryToken := `
+        INSERT INTO verification_tokens (user_id, token_hash, expires_at)
+        VALUES ($1, $2, $3)
+        RETURNING id, created_at
+    `
+
+	err = tx.QueryRowContext(
+		ctx,
+		queryToken,
+		token.UserID,
+		token.TokenHash,
+		token.ExpiresAt,
+	).Scan(&token.ID, &token.CreatedAt)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
