@@ -346,3 +346,162 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: user.CreatedAt,
 	})
 }
+
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req model.ForgotPasswordRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil ||
+		!helper.IsValidEmail(req.Email) {
+		helper.Error(w, http.StatusBadRequest, "Format email tidak valid.")
+		return
+	}
+
+	user, err := h.authRepo.GetUserByEmail(r.Context(), req.Email)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && user == nil) {
+		helper.JSON(
+			w,
+			http.StatusOK,
+			"Jika email terdaftar, tautan reset password akan dikirim.",
+			nil,
+		)
+		return
+	}
+
+	if err != nil {
+		helper.Error(
+			w,
+			http.StatusInternalServerError,
+			"Gagal memproses permintaan reset password.",
+		)
+		return
+	}
+
+	rawToken, err := helper.GenerateSessionToken()
+	if err != nil {
+		helper.Error(w, http.StatusInternalServerError, "Gagal membuat token reset.")
+		return
+	}
+
+	resetToken := &model.PasswordResetToken{
+		UserID:    user.ID,
+		TokenHash: helper.HashToken(rawToken),
+		ExpiresAt: time.Now().Add(30 * time.Minute),
+	}
+
+	if err := h.authRepo.CreatePasswordResetToken(r.Context(), resetToken); err != nil {
+		helper.Error(
+			w,
+			http.StatusInternalServerError,
+			"Gagal membuat token reset password.",
+		)
+		return
+	}
+
+	frontendURL := strings.TrimRight(
+		os.Getenv("FRONTEND_URL"),
+		"/",
+	)
+	if frontendURL == "" {
+		frontendURL = "http://localhost:5173"
+	}
+
+	resetURL := frontendURL + "/reset-password?token=" + rawToken
+
+	// Untuk pengujian lokal saja.
+	// Ganti dengan pengiriman email sungguhan sebelum production.
+	log.Printf(
+		"[RESET PASSWORD] Email: %s | Tautan: %s",
+		user.Email,
+		resetURL,
+	)
+
+	helper.JSON(
+		w,
+		http.StatusOK,
+		"Jika email terdaftar, tautan reset password akan dikirim.",
+		nil,
+	)
+}
+
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req model.ResetPasswordRequest
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil ||
+		strings.TrimSpace(req.Token) == "" {
+		helper.Error(w, http.StatusBadRequest, "Token reset wajib diisi.")
+		return
+	}
+
+	if !helper.IsStrongPassword(req.NewPassword) {
+		helper.Error(
+			w,
+			http.StatusBadRequest,
+			"Password harus lebih dari 8 karakter dan mengandung kombinasi huruf, angka, serta simbol.",
+		)
+		return
+	}
+
+	tokenHash := helper.HashToken(req.Token)
+
+	resetToken, err := h.authRepo.GetPasswordResetToken(
+		r.Context(),
+		tokenHash,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			helper.Error(
+				w,
+				http.StatusBadRequest,
+				"Token reset tidak valid atau sudah kedaluwarsa.",
+			)
+			return
+		}
+
+		helper.Error(
+			w,
+			http.StatusInternalServerError,
+			"Gagal memproses token reset.",
+		)
+		return
+	}
+
+	if resetToken.UsedAt != nil || time.Now().After(resetToken.ExpiresAt) {
+		helper.Error(
+			w,
+			http.StatusBadRequest,
+			"Token reset tidak valid atau sudah kedaluwarsa.",
+		)
+		return
+	}
+
+	hashedPassword, err := helper.HashPassword(req.NewPassword)
+	if err != nil {
+		helper.Error(
+			w,
+			http.StatusInternalServerError,
+			"Gagal memproses password.",
+		)
+		return
+	}
+
+	if err := h.authRepo.ResetPassword(
+		r.Context(),
+		resetToken.UserID,
+		resetToken.ID,
+		hashedPassword,
+	); err != nil {
+		helper.Error(
+			w,
+			http.StatusInternalServerError,
+			"Gagal memperbarui password.",
+		)
+		return
+	}
+
+	helper.JSON(
+		w,
+		http.StatusOK,
+		"Password berhasil diperbarui. Silakan login kembali.",
+		nil,
+	)
+}

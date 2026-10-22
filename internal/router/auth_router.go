@@ -20,6 +20,8 @@ func AuthRoutes(
 	mux.HandleFunc("GET /api/v1/auth/session", h.GetSession)
 	mux.HandleFunc("POST /api/v1/auth/verify-email", h.VerifyEmail)
 	mux.HandleFunc("POST /api/v1/auth/resend-verification", h.ResendVerification)
+	mux.HandleFunc("POST /api/v1/auth/forgot-password", h.ForgotPassword)
+	mux.HandleFunc("POST /api/v1/auth/reset-password", h.ResetPassword)
 
 	// Protected Routes (Memerlukan JWT Token yang Valid)
 	mux.Handle("POST /api/v1/auth/logout", middleware.AuthMiddleware(authRepo, http.HandlerFunc(h.Logout)))

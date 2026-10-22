@@ -21,6 +21,10 @@ type AuthRepository interface {
 	CreateSession(ctx context.Context, session *model.Session) error
 	GetSessionByTokenHash(ctx context.Context, tokenHash string) (*model.Session, error)
 	DeleteSessionByTokenHash(ctx context.Context, tokenHash string) error
+
+	CreatePasswordResetToken(ctx context.Context, token *model.PasswordResetToken) error
+	GetPasswordResetToken(ctx context.Context, tokenHash string) (*model.PasswordResetToken, error)
+	ResetPassword(ctx context.Context, userID string, tokenID string, hashedPassword string) error
 }
 
 type authRepository struct {
@@ -191,6 +195,148 @@ func (r *authRepository) CreateUserWithVerificationToken(
 		token.TokenHash,
 		token.ExpiresAt,
 	).Scan(&token.ID, &token.CreatedAt)
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit()
+}
+
+func (r *authRepository) CreatePasswordResetToken(
+	ctx context.Context,
+	token *model.PasswordResetToken,
+) error {
+	query := `
+		INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+		VALUES ($1, $2, $3)
+		RETURNING id, created_at
+	`
+
+	return r.db.QueryRowContext(
+		ctx,
+		query,
+		token.UserID,
+		token.TokenHash,
+		token.ExpiresAt,
+	).Scan(&token.ID, &token.CreatedAt)
+}
+
+func (r *authRepository) GetPasswordResetToken(
+	ctx context.Context,
+	tokenHash string,
+) (*model.PasswordResetToken, error) {
+	query := `
+		SELECT id, user_id, token_hash, expires_at, used_at, created_at
+		FROM password_reset_tokens
+		WHERE token_hash = $1
+	`
+
+	var token model.PasswordResetToken
+
+	err := r.db.QueryRowContext(ctx, query, tokenHash).Scan(
+		&token.ID,
+		&token.UserID,
+		&token.TokenHash,
+		&token.ExpiresAt,
+		&token.UsedAt,
+		&token.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, sql.ErrNoRows
+		}
+		return nil, err
+	}
+
+	return &token, nil
+}
+
+func (r *authRepository) ResetPassword(
+	ctx context.Context,
+	userID string,
+	tokenID string,
+	hashedPassword string,
+) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var lockedTokenID string
+
+	err = tx.QueryRowContext(
+		ctx,
+		`
+		SELECT id
+		FROM password_reset_tokens
+		WHERE id = $1
+		  AND user_id = $2
+		  AND used_at IS NULL
+		  AND expires_at > NOW()
+		FOR UPDATE
+		`,
+		tokenID,
+		userID,
+	).Scan(&lockedTokenID)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return sql.ErrNoRows
+		}
+		return err
+	}
+
+	result, err := tx.ExecContext(
+		ctx,
+		`
+		UPDATE users
+		SET password_hash = $1,
+		    updated_at = CURRENT_TIMESTAMP
+		WHERE id = $2
+		`,
+		hashedPassword,
+		userID,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	result, err = tx.ExecContext(
+		ctx,
+		`
+		UPDATE password_reset_tokens
+		SET used_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+		  AND used_at IS NULL
+		`,
+		tokenID,
+	)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err = result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+
+	_, err = tx.ExecContext(
+		ctx,
+		`DELETE FROM sessions WHERE user_id = $1`,
+		userID,
+	)
 	if err != nil {
 		return err
 	}
