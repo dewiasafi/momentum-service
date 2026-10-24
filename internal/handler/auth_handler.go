@@ -350,8 +350,12 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req model.ForgotPasswordRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil ||
-		!helper.IsValidEmail(req.Email) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.Error(w, http.StatusBadRequest, "Format data tidak valid.")
+		return
+	}
+
+	if !helper.IsValidEmail(req.Email) {
 		helper.Error(w, http.StatusBadRequest, "Format email tidak valid.")
 		return
 	}
@@ -368,6 +372,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		log.Printf("ForgotPassword: gagal mencari pengguna: %v", err)
 		helper.Error(
 			w,
 			http.StatusInternalServerError,
@@ -378,7 +383,12 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	rawToken, err := helper.GenerateSessionToken()
 	if err != nil {
-		helper.Error(w, http.StatusInternalServerError, "Gagal membuat token reset.")
+		log.Printf("ForgotPassword: gagal membuat token: %v", err)
+		helper.Error(
+			w,
+			http.StatusInternalServerError,
+			"Gagal membuat token reset.",
+		)
 		return
 	}
 
@@ -388,7 +398,11 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt: time.Now().Add(30 * time.Minute),
 	}
 
-	if err := h.authRepo.CreatePasswordResetToken(r.Context(), resetToken); err != nil {
+	if err := h.authRepo.CreatePasswordResetToken(
+		r.Context(),
+		resetToken,
+	); err != nil {
+		log.Printf("ForgotPassword: gagal menyimpan token reset password: %v", err)
 		helper.Error(
 			w,
 			http.StatusInternalServerError,
@@ -397,20 +411,20 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	frontendURL := strings.TrimRight(
-		os.Getenv("FRONTEND_URL"),
-		"/",
-	)
+	frontendURL := strings.TrimRight(os.Getenv("FRONTEND_URL"), "/")
 	if frontendURL == "" {
 		frontendURL = "http://localhost:5173"
 	}
 
 	resetURL := frontendURL + "/reset-password?token=" + rawToken
 
-	// Untuk pengujian lokal saja.
-	// Ganti dengan pengiriman email sungguhan sebelum production.
+	// Untuk pengujian lokal saja. Jangan mencatat token di log production.
 	log.Printf(
-		"[RESET PASSWORD] Email: %s | Tautan: %s",
+		"\n========================================\n"+
+			"[RESET PASSWORD] Kirim ke: %s\n"+
+			"Tautan: %s\n"+
+			"(Kedaluwarsa dalam 30 menit)\n"+
+			"========================================\n",
 		user.Email,
 		resetURL,
 	)
@@ -426,8 +440,12 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req model.ResetPasswordRequest
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil ||
-		strings.TrimSpace(req.Token) == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		helper.Error(w, http.StatusBadRequest, "Format data tidak valid.")
+		return
+	}
+
+	if strings.TrimSpace(req.Token) == "" {
 		helper.Error(w, http.StatusBadRequest, "Token reset wajib diisi.")
 		return
 	}
@@ -457,6 +475,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		log.Printf("ResetPassword: gagal mencari token: %v", err)
 		helper.Error(
 			w,
 			http.StatusInternalServerError,
@@ -476,6 +495,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 
 	hashedPassword, err := helper.HashPassword(req.NewPassword)
 	if err != nil {
+		log.Printf("ResetPassword: gagal memproses password: %v", err)
 		helper.Error(
 			w,
 			http.StatusInternalServerError,
@@ -490,6 +510,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		resetToken.ID,
 		hashedPassword,
 	); err != nil {
+		log.Printf("ResetPassword: gagal memperbarui password: %v", err)
 		helper.Error(
 			w,
 			http.StatusInternalServerError,
