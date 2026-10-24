@@ -41,13 +41,18 @@ func main() {
 
 	activityRepo := repository.NewActivityRepository(db)
 	activityHandler := handler.NewActivityHandler(activityRepo)
+
 	authRepo := repository.NewAuthRepository(db)
 	authHandler := handler.NewAuthHandler(authRepo)
+
+	journalRepo := repository.NewJournalRepository(db)
+	journalHandler := handler.NewJournalHandler(journalRepo)
 
 	appRouter := router.SetupRoutes(router.RouterConfig{
 		ActivityHandler: activityHandler,
 		AuthHandler:     authHandler,
 		AuthRepo:        authRepo,
+		JournalHandler:  journalHandler,
 	})
 
 	port := os.Getenv("PORT")

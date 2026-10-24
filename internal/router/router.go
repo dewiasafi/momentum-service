@@ -12,6 +12,7 @@ import (
 type RouterConfig struct {
 	ActivityHandler *handler.ActivityHandler
 	AuthHandler     *handler.AuthHandler
+	JournalHandler  *handler.JournalHandler
 	AuthRepo        repository.AuthRepository
 }
 
@@ -24,6 +25,7 @@ func SetupRoutes(cfg RouterConfig) http.Handler {
 
 	ActivityRoutes(mux, cfg.ActivityHandler)
 	AuthRoutes(mux, cfg.AuthHandler, cfg.AuthRepo)
+	JournalRoutes(mux, cfg.JournalHandler, cfg.AuthRepo)
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		helper.Error(w, http.StatusNotFound, "Endpoint tidak ditemukan")
